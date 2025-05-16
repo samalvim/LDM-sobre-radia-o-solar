@@ -1,0 +1,96 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Parâmetros fixos
+F10 = 300          # Evento solar máximo (SFU)
+Sb = 10000         # Contribuição Sb (SFU)
+G_dBi = 24         # Ganho da antena em dBi
+G = 10**(G_dBi/10) # Ganho linear da antena
+T = 42 + 273.15    # Temperatura do sistema (Kelvin)
+c = 3e8            # Velocidade da luz (m/s)
+k = 1.38e-23       # Constante de Boltzmann (J/K)
+Omega_s = 6.8e-5   # Ângulo sólido do Sol (steradian)
+d0 = 1.0           # Distância de referência (m)
+d = 100.0          # Distância do link LOS (m)
+Pt = 10.0          # Potência do transmissor (dBm)
+Gt = 24.0          # Ganho da antena transmissora (dBi)
+Gr = 24.0          # Ganho da antena receptora (dBi)
+
+# Valores fixos de CNR (em dB) para distâncias [1, 10, 20, 50, 100] m
+cnr_values = np.array([163.6, 143.6, 137.6, 129.6, 123.6])
+
+# Vetor de frequências de 25 a 60 GHz
+freqs = np.arange(25, 61)  # em GHz
+
+# Listas para armazenar os resultados
+received_power_dBm = []
+results = []  # para criação da tabela
+
+for f in freqs:
+    # Cálculo de Sq e Sv (em SFU) para a frequência f (GHz)
+    Sq = 26.4 + 12.4 * f + 1.11 * (f**2)
+    Sv = (0.64 * (F10 - 70) * (f ** 0.4)) / (1 + 1.56 * (np.log(f / 2.9))**2)
+    # Soma total de S (em SFU)
+    S = Sq + Sv + Sb
+    # Converter S para unidades SI (1 SFU = 1e-22 W/m²/Hz)
+    S_SI = S * 1e-22
+
+    # Converter frequência para Hz e calcular o comprimento de onda (λ)
+    f_Hz = f * 1e9
+    wavelength = c / f_Hz
+
+    # Área efetiva da antena (Ae)
+    Ae = (wavelength**2 * G) / (4 * np.pi)
+
+    # Cálculo de ΔCNR (dB):
+    # ΔCNR = 10 log10[1 + (2π * S_SI * Ae) / (G * k * T * Omega_s)]
+    delta_CNR = 10 * np.log10(1 + (2 * np.pi * S_SI * Ae) / (G * k * T * Omega_s))
+
+    # Ajuste do CNR para cada distância (valores fixos) e cálculo da degradação percentual
+    cnr_degradado = cnr_values - delta_CNR
+    percentual_degradado = ((cnr_values - cnr_degradado) / cnr_values) * 100
+    media_acumulada = np.mean(percentual_degradado)
+
+    # Cálculo do expoente de perda efetivo (n)
+    n_effective = 2 + ((media_acumulada / 100) * 2)
+
+    # Cálculo da perda de percurso no espaço livre na distância de referência d0:
+    PL_d0 = 20 * np.log10((4 * np.pi * d0) / wavelength)
+
+    # Modelo de propagação: perda total para a distância d (100 m)
+    PL_d = PL_d0 + 10 * n_effective * np.log10(d / d0)
+
+    # Cálculo da potência recebida (dBm):
+    # P_rec = Pt - PL_d + Gt + Gr
+    P_rec_dBm = Pt - PL_d + Gt + Gr
+    received_power_dBm.append(P_rec_dBm)
+
+    # Armazenar os resultados para a tabela
+    results.append({
+        "Freq (GHz)": f,
+        "Sq (SFU)": round(Sq, 2),
+        "Sv (SFU)": round(Sv, 2),
+        "S (SFU)": round(S, 2),
+        "ΔCNR (dB)": round(delta_CNR, 2),
+        "n sob Sq e Sb": round(n_effective, 3),
+        "PL_d0 (dB)": round(PL_d0, 2),
+        "PL_d (dB)": round(PL_d, 2),
+        "P_rec (dBm)": round(P_rec_dBm, 2)
+    })
+
+# Criação do DataFrame para exibir os valores em tabela
+df = pd.DataFrame(results)
+
+# Exibição da tabela no console
+print("Tabela de Valores Calculados:")
+print(df.to_string(index=False))
+
+# Plot da potência recebida versus frequência
+plt.figure(figsize=(10, 6))
+plt.plot(freqs, received_power_dBm, marker='o', linestyle='-', color='b')
+plt.xlabel('Frequência (GHz)')
+plt.ylabel('Potência Recebida (dBm)')
+plt.title('Potência Recebida em 100 m (LOS) sob Influência da Radiação Solar')
+plt.grid(True)
+plt.show()
